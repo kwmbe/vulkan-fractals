@@ -13,4 +13,9 @@ target_link_libraries(HelloTriangleApplication PRIVATE
     Vulkan::Vulkan
 )
 
-target_compile_features(HelloTriangleApplication PRIVATE cxx_std_17)
+target_compile_features(HelloTriangleApplication PRIVATE cxx_std_20)
+
+target_compile_definitions(HelloTriangleApplication PRIVATE
+  VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
+  VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
+)
