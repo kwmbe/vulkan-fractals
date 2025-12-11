@@ -31,6 +31,7 @@ private:
   vk::raii::Context                context;
   vk::raii::Instance               instance =       nullptr;
   vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
+  vk::raii::PhysicalDevice         physicalDevice = nullptr;
 
   GLFWwindow* window = nullptr;
 
@@ -61,7 +62,7 @@ private:
       .applicationVersion = VK_MAKE_VERSION( 1, 0, 0 ),
       .pEngineName =        "No Engine",
       .engineVersion =      VK_MAKE_VERSION( 1, 0, 0 ),
-      .apiVersion =         vk::ApiVersion
+      .apiVersion =         vk::ApiVersion14
     };
 
     // Get validation layers
@@ -151,27 +152,18 @@ private:
   }
 
   void pickPhysicalDevice() {
-    vk::raii::PhysicalDevice physicalDevice = nullptr;
-
     auto devices = instance.enumeratePhysicalDevices();
 
     if (devices.empty()) {
       throw std::runtime_error("failed to find GPUs with Vulkan support!");
     }
 
-    const auto devIter = std::ranges::find_if(
-      devices,
-      [&](const auto& device) {
-        if (isDeviceSuitable(device)) {
-          physicalDevice = device;
-          return true;
-        }
-        return false;
-      }
-    );
+    const auto devIter = std::ranges::find_if(devices, [&](const auto& device) { return isDeviceSuitable(device); });
 
     if (devIter == devices.end()) {
       throw std::runtime_error("failed to find a suitable GPU!");
+    } else {
+      physicalDevice = *devIter;
     }
   }
 
@@ -191,6 +183,9 @@ private:
       auto extensionIter = std::ranges::find_if(extensions, [extension](const auto& ext) { return strcmp(ext.extensionName, extension) == 0; });
       found = found && extensionIter != extensions.end();
     }
+
+    auto features                 = device.template getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
+    bool supportsRequiredFeatures = features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering && features.template get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState;
 
     return isSuitable && found;
   }
