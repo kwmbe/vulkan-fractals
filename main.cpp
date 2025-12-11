@@ -34,6 +34,13 @@ private:
 
   GLFWwindow* window = nullptr;
 
+  std::vector<const char*> requiredDeviceExtensions = {
+    vk::KHRSwapchainExtensionName,
+    vk::KHRSpirv14ExtensionName,
+    vk::KHRSynchronization2ExtensionName,
+    vk::KHRCreateRenderpass2ExtensionName
+  };
+
   void initWindow() {
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -45,6 +52,7 @@ private:
   void initVulkan() {
     createInstance();
     setupDebugMessenger();
+    pickPhysicalDevice();
   }
 
   void createInstance() {
@@ -140,6 +148,51 @@ private:
       .pfnUserCallback = &debugCallback
       };
     debugMessenger = instance.createDebugUtilsMessengerEXT(debugUtilsMessengerCreateInfoEXT);
+  }
+
+  void pickPhysicalDevice() {
+    vk::raii::PhysicalDevice physicalDevice = nullptr;
+
+    auto devices = instance.enumeratePhysicalDevices();
+
+    if (devices.empty()) {
+      throw std::runtime_error("failed to find GPUs with Vulkan support!");
+    }
+
+    const auto devIter = std::ranges::find_if(
+      devices,
+      [&](const auto& device) {
+        if (isDeviceSuitable(device)) {
+          physicalDevice = device;
+          return true;
+        }
+        return false;
+      }
+    );
+
+    if (devIter == devices.end()) {
+      throw std::runtime_error("failed to find a suitable GPU!");
+    }
+  }
+
+  bool isDeviceSuitable(vk::raii::PhysicalDevice device) {
+    auto queueFamilies = device.getQueueFamilyProperties();
+    bool isSuitable =    device.getProperties().apiVersion >= VK_API_VERSION_1_3;
+    const auto qfpIter = std::ranges::find_if( queueFamilies, [](vk::QueueFamilyProperties const & qfp) {
+      return (qfp.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0);
+    });
+
+    isSuitable = isSuitable && (qfpIter != queueFamilies.end());
+
+    auto extensions = device.enumerateDeviceExtensionProperties();
+    bool found =      true;
+
+    for (const auto& extension : requiredDeviceExtensions) {
+      auto extensionIter = std::ranges::find_if(extensions, [extension](const auto& ext) { return strcmp(ext.extensionName, extension) == 0; });
+      found = found && extensionIter != extensions.end();
+    }
+
+    return isSuitable && found;
   }
 
   void mainLoop() {
