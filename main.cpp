@@ -32,6 +32,8 @@ private:
   vk::raii::Instance               instance =       nullptr;
   vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
   vk::raii::PhysicalDevice         physicalDevice = nullptr;
+  vk::raii::Device                 device =         nullptr;
+  vk::raii::Queue                  graphicsQueue =  nullptr;
 
   GLFWwindow* window = nullptr;
 
@@ -54,6 +56,7 @@ private:
     createInstance();
     setupDebugMessenger();
     pickPhysicalDevice();
+    createLogicalDevice();
   }
 
   void createInstance() {
@@ -188,6 +191,41 @@ private:
     bool supportsRequiredFeatures = features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering && features.template get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState;
 
     return isSuitable && found;
+  }
+
+  void createLogicalDevice() {
+    std::vector<vk::QueueFamilyProperties> queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
+
+    // this was not in the guide
+    auto graphicsQueueFamilyProperty = std::ranges::find_if(queueFamilyProperties, [](auto const &qfp) { return (qfp.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0); });
+    uint32_t graphicsIndex =           static_cast<uint32_t>(std::distance(queueFamilyProperties.begin(), graphicsQueueFamilyProperty));
+    float queuePriority =              0.5f;
+
+    vk::PhysicalDeviceFeatures deviceFeatures;
+
+    // Create a chain of feature structures
+    vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
+      {},                              // vk::PhysicalDeviceFeatures2
+      { .dynamicRendering = true },    // dynamic rendering from vulkan 1.3
+      { .extendedDynamicState = true } // dynamic state from the extension
+    };
+
+    vk::DeviceQueueCreateInfo deviceQueueCreateInfo {
+      .queueFamilyIndex = graphicsIndex,
+      .queueCount =       1,
+      .pQueuePriorities = &queuePriority
+    };
+
+    vk::DeviceCreateInfo deviceCreateInfo {
+      .pNext =                   &featureChain.get<vk::PhysicalDeviceFeatures2>(), // Vulkan wil see all features because of the chain
+      .queueCreateInfoCount =    1,
+      .pQueueCreateInfos =       &deviceQueueCreateInfo,
+      .enabledExtensionCount =   static_cast<uint32_t>(requiredDeviceExtensions.size()),
+      .ppEnabledExtensionNames = requiredDeviceExtensions.data()
+    };
+
+    device =        vk::raii::Device(physicalDevice, deviceCreateInfo);
+    graphicsQueue = vk::raii::Queue(device, graphicsIndex, 0);
   }
 
   void mainLoop() {
