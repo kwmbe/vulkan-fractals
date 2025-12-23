@@ -72,6 +72,7 @@ private:
     createLogicalDevice();
     createSwapChain();
     createImageViews();
+    createGraphicsPipeline();
   }
 
   void createInstance() {
@@ -356,6 +357,10 @@ private:
       imageViewCreateInfo.image = image;
       swapChainImageViews.emplace_back( device, imageViewCreateInfo);
     }
+  }
+
+  void createGraphicsPipeline() {
+
   }
 
   void mainLoop() {
