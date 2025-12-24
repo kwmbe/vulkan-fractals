@@ -9,6 +9,8 @@
 #include <limits>    // Necessary for std::numeric_limits
 #include <algorithm> // Necessary for std::clamp
 
+#include <fstream>   // for loading the shaders bytecode
+
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
 
@@ -360,7 +362,36 @@ private:
   }
 
   void createGraphicsPipeline() {
+    auto shaderCode = readFile("shaders/slang.spv");
+    vk::raii::ShaderModule shaderModule = createShaderModule(shaderCode);
 
+    vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
+      .stage = vk::ShaderStageFlagBits::eVertex,
+      .module = shaderModule,
+      .pName = "vertMain"
+    };
+
+    vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
+      .stage = vk::ShaderStageFlagBits::eFragment,
+      .module = shaderModule,
+      .pName = "fragMain"
+    };
+
+    vk::PipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+  }
+
+  [[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const {
+    vk::ShaderModuleCreateInfo createInfo{
+      .codeSize = code.size() * sizeof(char),
+      .pCode = reinterpret_cast<const uint32_t*>(code.data())
+    };
+
+    vk::raii::ShaderModule shaderModule{
+      device,
+      createInfo
+    };
+
+    return shaderModule;
   }
 
   void mainLoop() {
@@ -374,6 +405,23 @@ private:
     surface =   nullptr; // to avoid a SEGFAULT at DestroySurfaceKHR
     glfwDestroyWindow(window);
     glfwTerminate();
+  }
+
+  static std::vector<char> readFile(const std::string& filename) {
+    std::ifstream file(filename, std::ios::ate | std::ios::binary); // begin reading at end of file
+
+    if (!file.is_open()) {
+        throw std::runtime_error("failed to open file!");
+    }
+
+    std::vector<char> buffer(file.tellg()); // allocate buffer with length of file
+
+    file.seekg(0, std::ios::beg); // go to beginning of file
+    file.read(buffer.data(), static_cast<std::streamsize>(buffer.size())); // read all bytes
+
+    file.close();
+
+    return buffer;
   }
 };
 
