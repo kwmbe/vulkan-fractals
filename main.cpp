@@ -35,15 +35,16 @@ public:
 
 private:
   vk::raii::Context                context;
-  vk::raii::Instance               instance =       nullptr;
-  vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
-  vk::raii::SurfaceKHR             surface =        nullptr;
-  vk::raii::PhysicalDevice         physicalDevice = nullptr;
-  vk::raii::Device                 device =         nullptr;
-  vk::raii::Queue                  graphicsQueue =  nullptr;
-  vk::raii::Queue                  presentQueue =   nullptr;
-  vk::raii::SwapchainKHR           swapChain =      nullptr;
-  vk::raii::PipelineLayout         pipelineLayout = nullptr;
+  vk::raii::Instance               instance =         nullptr;
+  vk::raii::DebugUtilsMessengerEXT debugMessenger =   nullptr;
+  vk::raii::SurfaceKHR             surface =          nullptr;
+  vk::raii::PhysicalDevice         physicalDevice =   nullptr;
+  vk::raii::Device                 device =           nullptr;
+  vk::raii::Queue                  graphicsQueue =    nullptr;
+  vk::raii::Queue                  presentQueue =     nullptr;
+  vk::raii::SwapchainKHR           swapChain =        nullptr;
+  vk::raii::PipelineLayout         pipelineLayout =   nullptr;
+  vk::raii::Pipeline               graphicsPipeline = nullptr;
 
   std::vector<vk::Image>           swapChainImages;
   std::vector<vk::raii::ImageView> swapChainImageViews;
@@ -439,7 +440,7 @@ private:
     };
 
     vk::PipelineColorBlendStateCreateInfo colorBlending{
-      .logicOpEnable =   vk::True,
+      .logicOpEnable =   vk::False,
       .logicOp =         vk::LogicOp::eCopy,
       .attachmentCount = 1,
       .pAttachments =    &colorBlendAttachment
@@ -469,8 +470,16 @@ private:
       .pColorBlendState =    &colorBlending,
       .pDynamicState =       &dynamicState,
       .layout =              pipelineLayout,
-      .renderPass =          nullptr
+      .renderPass =          nullptr,
+      .basePipelineHandle =  nullptr,
+      .basePipelineIndex =   -1
     };
+
+    graphicsPipeline = vk::raii::Pipeline(
+      device,
+      nullptr, // pipeline cache to speed up pipeline creation
+      pipelineInfo
+    );
   }
 
   [[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const {
