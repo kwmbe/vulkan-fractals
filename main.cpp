@@ -416,13 +416,6 @@ private:
       .topology = vk::PrimitiveTopology::eTriangleList
     };
 
-    vk::Viewport{
-      0.0f, 0.0f, 
-      static_cast<float>(swapChainExtent.width),
-      static_cast<float>(swapChainExtent.height),
-      0.0f, 1.0f
-    };
-
     vk::PipelineViewportStateCreateInfo viewportState{
       .viewportCount = 1,
       .scissorCount =  1
@@ -445,13 +438,9 @@ private:
     };
 
     vk::PipelineColorBlendAttachmentState colorBlendAttachment{
-      .blendEnable =         vk::True,
-      .srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,
-      .dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
-      .colorBlendOp =        vk::BlendOp::eAdd,
-      .srcAlphaBlendFactor = vk::BlendFactor::eOne,
-      .dstAlphaBlendFactor = vk::BlendFactor::eZero,
-      .alphaBlendOp =        vk::BlendOp::eAdd
+      .blendEnable =         vk::False,
+      .colorWriteMask =      vk::ColorComponentFlagBits::eR | 
+        vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
     };
 
     vk::PipelineColorBlendStateCreateInfo colorBlending{
@@ -638,6 +627,7 @@ private:
   }
 
   void drawFrame() {
+    auto fenceResult = device.waitForFences(*drawFence, vk::True, UINT64_MAX);
     presentQueue.waitIdle(); // not in tutorial, is needed to not error
 
     auto [result, imageIndex] = swapChain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphore, nullptr); // wrong in the tutorial
@@ -658,9 +648,9 @@ private:
 
     graphicsQueue.submit(submitInfo, *drawFence);
 
-    result = device.waitForFences(*drawFence, vk::True, UINT64_MAX);
+    // result = device.waitForFences(*drawFence, vk::True, UINT64_MAX);
 
-    if (result != vk::Result::eSuccess)
+    if (fenceResult != vk::Result::eSuccess)
 		{
 			throw std::runtime_error("failed to wait for fence!");
 		}
@@ -693,6 +683,7 @@ private:
       glfwPollEvents();
       drawFrame();
     }
+    device.waitIdle();
   }
 
   void cleanup() {
