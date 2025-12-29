@@ -54,6 +54,7 @@ private:
   std::vector<vk::raii::Semaphore>     renderFinishedSemaphores;
   std::vector<vk::raii::Fence>         inFlightFences;
 
+  bool                             frameBufferResized =   false;
   std::vector<vk::Image>           swapChainImages;
   std::vector<vk::raii::ImageView> swapChainImageViews;
   vk::Format                       swapChainImageFormat = vk::Format::eUndefined;
@@ -71,9 +72,17 @@ private:
   void initWindow() {
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
     window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+
+    glfwSetWindowUserPointer(window, this);
+    glfwSetFramebufferSizeCallback(window, frameBufferResizeCallback);
+  }
+
+  static void frameBufferResizeCallback(GLFWwindow* window, int width, int height) {
+    auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+    app->frameBufferResized = true;
   }
 
   void initVulkan() {
@@ -324,7 +333,7 @@ private:
       .compositeAlpha =   vk::CompositeAlphaFlagBitsKHR::eOpaque,
       .presentMode =      chooseSwapPresentMode(physicalDevice.getSurfacePresentModesKHR(surface)),
       .clipped =          true,
-      .oldSwapchain =     nullptr
+      .oldSwapchain =     swapChain
     };
 
     swapChain =            vk::raii::SwapchainKHR(device, swapChainCreateInfo);
@@ -641,6 +650,28 @@ private:
     }
   }
 
+  void cleanupSwapChain() {
+    swapChainImageViews.clear();
+    swapChain = nullptr;
+  }
+
+  void recreateSwapChain() {
+    // handle minimizing
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(window, &width, &height);
+    while (width == 0 && height == 0) {
+      glfwGetFramebufferSize(window, &width, &height);
+      glfwWaitEvents();
+    }
+
+    device.waitIdle();
+
+    cleanupSwapChain();
+
+    createSwapChain();
+    createImageViews();
+  }
+
   void drawFrame() {
     auto fenceResult = device.waitForFences(*inFlightFences[frameIndex], vk::True, UINT64_MAX);
     if (fenceResult != vk::Result::eSuccess) {
@@ -650,6 +681,15 @@ private:
     device.resetFences(*inFlightFences[frameIndex]);
 
     auto [result, imageIndex] = swapChain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphores[frameIndex], nullptr);
+
+    if (result == vk::Result::eErrorOutOfDateKHR) {
+      recreateSwapChain();
+      return;
+    }
+
+    if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
+      throw std::runtime_error("failed to acquire swap chain image!");
+    }
 
     commandBuffers[frameIndex].reset();
     recordCommandBuffer(imageIndex);
@@ -667,29 +707,34 @@ private:
 
     graphicsQueue.submit(submitInfo, *inFlightFences[frameIndex]);
 
+    try {
+      const vk::PresentInfoKHR presentInfoKHR{
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores =    &*renderFinishedSemaphores[imageIndex],
+        .swapchainCount =     1,
+        .pSwapchains =        &*swapChain,
+        .pImageIndices =      &imageIndex,
+        .pResults =           nullptr // used to check if presentation was successful
+      };
+
+      result = presentQueue.presentKHR(presentInfoKHR);
+
+      if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR || frameBufferResized) {
+        frameBufferResized = false;
+        recreateSwapChain();
+      } else if (result != vk::Result::eSuccess) {
+        throw std::runtime_error("failed to present swap chain image!");
+      }
+    } catch (const vk::SystemError &e) {
+      if (e.code().value() == static_cast<int>(vk::Result::eErrorOutOfDateKHR)) {
+        recreateSwapChain();
+        return;
+      } else {
+        throw;
+      }
+    }
+
     frameIndex = (frameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
-
-    const vk::PresentInfoKHR presentInfoKHR{
-      .waitSemaphoreCount = 1,
-      .pWaitSemaphores =    &*renderFinishedSemaphores[imageIndex],
-      .swapchainCount =     1,
-      .pSwapchains =        &*swapChain,
-      .pImageIndices =      &imageIndex,
-      .pResults =           nullptr // used to check if presentation was successful
-    };
-
-    result = presentQueue.presentKHR(presentInfoKHR);
-
-    switch (result)
-		{
-			case vk::Result::eSuccess:
-				break;
-			case vk::Result::eSuboptimalKHR:
-				std::cout << "vk::Queue::presentKHR returned vk::Result::eSuboptimalKHR !\n";
-				break;
-			default:
-				break; // an unexpected result is returned!
-		}
   }
 
   void mainLoop() {
@@ -701,7 +746,8 @@ private:
   }
 
   void cleanup() {
-    swapChain = nullptr; // same issue
+    cleanupSwapChain();
+    // swapChain = nullptr; // same issue
     surface =   nullptr; // to avoid a SEGFAULT at DestroySurfaceKHR
     glfwDestroyWindow(window);
     glfwTerminate();
