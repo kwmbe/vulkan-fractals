@@ -121,7 +121,7 @@ private:
     createImageViews();
     createGraphicsPipeline();
     createCommandPool();
-    creatVertexBuffer();
+    createVertexBuffer();
     createCommandBuffers();
     createSyncObjects();
   }
@@ -567,32 +567,35 @@ private:
     throw std::runtime_error("failed to find suitable memory type!");
   }
 
-  void creatVertexBuffer() {
+  void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Buffer& buffer, vk::raii::DeviceMemory& bufferMemory) {
     vk::BufferCreateInfo bufferInfo{
-      .size =        sizeof(vertices[0]) * vertices.size(), // in bytes
-      .usage =       vk::BufferUsageFlagBits::eVertexBuffer,
+      .size =        size, // in bytes
+      .usage =       usage,
       .sharingMode = vk::SharingMode::eExclusive
     };
 
-    vertexBuffer = vk::raii::Buffer(device, bufferInfo);
+    buffer = vk::raii::Buffer(device, bufferInfo);
 
-    vk::MemoryRequirements memRequirements = vertexBuffer.getMemoryRequirements();
+    vk::MemoryRequirements memRequirements = buffer.getMemoryRequirements();
 
-    vk::MemoryAllocateInfo memoryAllocateInfo{
+    vk::MemoryAllocateInfo allocInfo{
       .allocationSize =  memRequirements.size,
       .memoryTypeIndex = findMemoryType(
           memRequirements.memoryTypeBits,
-          vk::MemoryPropertyFlagBits::eHostVisible
-          | vk::MemoryPropertyFlagBits::eHostCoherent
-          )
+          properties)
     };
 
-    vertexBufferMemory = vk::raii::DeviceMemory(device, memoryAllocateInfo);
-    vertexBuffer.bindMemory(*vertexBufferMemory, 0);
+    bufferMemory = vk::raii::DeviceMemory(device, allocInfo);
+    buffer.bindMemory(*bufferMemory, 0);
+  }
+
+  void createVertexBuffer() {
+    vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+    createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, vertexBuffer, vertexBufferMemory);
 
     // map buffer memory into CPU accessible memory
-    void* data = vertexBufferMemory.mapMemory(0, bufferInfo.size);
-    memcpy(data, vertices.data(), bufferInfo.size);
+    void* data = vertexBufferMemory.mapMemory(0, bufferSize);
+    memcpy(data, vertices.data(), (size_t) bufferSize);
     vertexBufferMemory.unmapMemory();
   }
 
