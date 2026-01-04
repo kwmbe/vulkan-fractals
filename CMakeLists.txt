@@ -1,21 +1,21 @@
 cmake_minimum_required(VERSION 3.29)
-project(HelloTriangleApplication)
+project(Fractals)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/CMake")
 
 find_package (glfw3 REQUIRED)
 find_package (Vulkan REQUIRED)
 
-add_executable(HelloTriangleApplication main.cpp)
+add_executable(Fractals main.cpp)
 
-target_link_libraries(HelloTriangleApplication PRIVATE
+target_link_libraries(Fractals PRIVATE
     glfw
     Vulkan::Vulkan
 )
 
-target_compile_features(HelloTriangleApplication PRIVATE cxx_std_20)
+target_compile_features(Fractals PRIVATE cxx_std_20)
 
-target_compile_definitions(HelloTriangleApplication PRIVATE
+target_compile_definitions(Fractals PRIVATE
   VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
   VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
 )
@@ -40,4 +40,4 @@ function (add_slang_shader_target TARGET)
 endfunction()
 
 add_slang_shader_target( Shaders SOURCES ${SHADER_SLANG_SOURCES})
-add_dependencies(HelloTriangleApplication Shaders)
+add_dependencies(Fractals Shaders)

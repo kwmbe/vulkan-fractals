@@ -27,7 +27,7 @@ constexpr bool enableValidationLayers = false;
 constexpr bool enableValidationLayers = true;
 #endif
 
-class HelloTriangleApplication {
+class Fractals {
 public:
   void run() {
     initWindow();
@@ -114,7 +114,7 @@ private:
   }
 
   static void frameBufferResizeCallback(GLFWwindow* window, int width, int height) {
-    auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+    auto app = reinterpret_cast<Fractals*>(glfwGetWindowUserPointer(window));
     app->frameBufferResized = true;
   }
 
@@ -912,7 +912,7 @@ private:
 };
 
 int main() {
-  HelloTriangleApplication app;
+  Fractals app;
 
   try {
     app.run();
