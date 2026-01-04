@@ -9,3 +9,7 @@ cmake ..
 cmake --build .
 ```
 Now you can execute the application with `build/Fractals`
+
+## Gallery
+
+![Mandelbrot fractal](./images/mandelbrot.png)
