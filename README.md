@@ -1,5 +1,5 @@
-# vulkan-test
-Trying to learn vulkan by following [the official Khronos Vulkan® Tutorial](https://docs.vulkan.org/tutorial/latest/00_Introduction.html).
+# vulkan-fractals
+Clone of my [vulkan-test](https://github.com/kwmbe/vulkan-test) repo for trying to visualise fractals with vulkan.
 
 ## Running the application
 Go into the build directory and compile the application with:
