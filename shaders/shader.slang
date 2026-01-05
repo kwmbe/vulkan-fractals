@@ -2,7 +2,6 @@ static const int MAX_ITER = 100;
 
 struct VSInput {
   float2 inPosition;
-  float3 inColor;
 }
 
 struct VSOutput {
