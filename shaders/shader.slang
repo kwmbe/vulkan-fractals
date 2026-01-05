@@ -61,7 +61,10 @@ VSOutput vertMain(VSInput input) {
 
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_Target {
-  float2 pt = float2(vertIn.npos.x * 1.5 - 0.5, vertIn.npos.y * 1.2);
+  float ny = (vertIn.npos.y + 1) * 0.5;
+  float nx = (vertIn.npos.x + 1) * 0.5;
+  float ar = (vertIn.pos.x / nx) / (vertIn.pos.y / ny);
+  float2 pt = float2(vertIn.npos.x * 1.5 - 0.5, (vertIn.npos.y / ar) * 1.5);
   float3 color = colorCode(mandelbrotIterations(pt));
 
   return float4(color, 1.0); // rgb + alpha
