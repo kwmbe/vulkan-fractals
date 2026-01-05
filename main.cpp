@@ -68,6 +68,12 @@ private:
 
   GLFWwindow* window = nullptr;
 
+  struct PushConstants {
+    float offsetX;
+    float offsetY;
+    float scale;
+  };
+
   struct Vertex {
     glm::vec2 pos;
 
@@ -502,9 +508,16 @@ private:
       .pAttachments =    &colorBlendAttachment
     };
 
+    vk::PushConstantRange pushConstantRange{
+      .stageFlags = vk::ShaderStageFlagBits::eFragment,
+      .offset =     0,
+      .size =       sizeof(PushConstants)
+    };
+
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
-      .setLayoutCount = 0,
-      .pushConstantRangeCount = 0
+      .setLayoutCount =         0,
+      .pushConstantRangeCount = 1,
+      .pPushConstantRanges =    &pushConstantRange
     };
 
     pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
@@ -712,6 +725,21 @@ private:
     // bind vertex buffers
     commandBuffer.bindVertexBuffers(0, *vertexBuffer, {0});
     commandBuffer.bindIndexBuffer(*indexBuffer, 0, vk::IndexType::eUint16);
+
+    // create push constants
+    PushConstants pushConstants{
+      .offsetX = -0.5, // change later
+      .offsetY =  0,
+      .scale =    1
+    };
+
+    // push constants into buffer
+    commandBuffer.pushConstants<PushConstants>(
+      *pipelineLayout,
+      vk::ShaderStageFlagBits::eFragment,
+      0,
+      pushConstants
+    );
 
     // draw triangle
     commandBuffer.drawIndexed(indices.size(), 1, 0, 0, 0);

@@ -9,6 +9,14 @@ struct VSOutput {
   float2 npos;
 };
 
+struct PushConstants {
+  float offsetX;
+  float offsetY;
+  float scale;
+};
+
+[[vk::push_constant]] PushConstants pc;
+
 float mandelbrotIterations(float2 c) {
   float2 z = float2(0.0, 0.0);
 
@@ -60,10 +68,13 @@ VSOutput vertMain(VSInput input) {
 
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_Target {
-  float ny = (vertIn.npos.y + 1) * 0.5;
   float nx = (vertIn.npos.x + 1) * 0.5;
+  float ny = (vertIn.npos.y + 1) * 0.5;
   float ar = (vertIn.pos.x / nx) / (vertIn.pos.y / ny);
-  float2 pt = float2(vertIn.npos.x * 1.5 - 0.5, (vertIn.npos.y / ar) * 1.5);
+  float2 pt = float2(
+     vertIn.npos.x       * 1.5 + pc.offsetX,
+    (vertIn.npos.y / ar) * 1.5 + pc.offsetY
+  );
   float3 color = colorCode(mandelbrotIterations(pt));
 
   return float4(color, 1.0); // rgb + alpha
