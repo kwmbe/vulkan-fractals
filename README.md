@@ -18,6 +18,11 @@ cmake --build .
 ```
 Now you can execute the application from the root folder with `build/Fractals`
 
+## Controls
+Click and drag to pan around.
+Scroll for zooming in and out.
+
 ## Gallery
 
 ![Mandelbrot fractal](./images/mandelbrot.png)
+![Mandelbrot closeup](./images/closeup.png)
