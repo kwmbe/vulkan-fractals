@@ -125,6 +125,7 @@ private:
     glfwSetFramebufferSizeCallback(window, frameBufferResizeCallback);
     glfwSetCursorPosCallback(window, cursorPositionCallback);
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
+    glfwSetScrollCallback(window, scrollCallback);
   }
 
   static void frameBufferResizeCallback(GLFWwindow* window, int width, int height) {
@@ -136,14 +137,8 @@ private:
     auto app = reinterpret_cast<Fractals*>(glfwGetWindowUserPointer(window));
 
     if (app->mousePressed) {
-      double deltaX = xpos - app->mouseX;
-      double deltaY = ypos - app->mouseY;
-
-      float worldDeltaX = -(deltaX / WIDTH) * app->scale * 3.0f;
-      float worldDeltaY = -(deltaY / WIDTH) * app->scale * 3.0f;
-
-      app->panOffsetX += worldDeltaX;
-      app->panOffsetY += worldDeltaY;
+      app->panOffsetX += -((xpos - app->mouseX) / WIDTH) * app->scale * 3.0f;
+      app->panOffsetY += -((ypos - app->mouseY) / WIDTH) * app->scale * 3.0f;
 
       app->mouseX = xpos;
       app->mouseY = ypos;
@@ -164,6 +159,33 @@ private:
     }
   }
 
+  static void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
+    auto app = reinterpret_cast<Fractals*>(glfwGetWindowUserPointer(window));
+
+    float  ar = WIDTH / HEIGHT;
+    double x, y;
+    glfwGetCursorPos(window, &x, &y);
+
+    // normalize
+    x = (x / WIDTH)  * 2.0f - 1.0f;
+    y = (y / HEIGHT) * 2.0f - 1.0f;
+
+    // world coords
+    float wx =  x       * 1.5f * app->scale;
+    float wy = (y / ar) * 1.5f * app->scale;
+
+    // zoom
+    app->scale -= app->scale * yoffset * 0.1f;
+
+    // after zoom
+    float nwx =  x       * 1.5f * app->scale;
+    float nwy = (y / ar) * 1.5f * app->scale;
+
+    // move by diff
+    app->panOffsetX += (wx - nwx);
+    app->panOffsetY += (wy - nwy);
+  }
+
   void initVulkan() {
     createInstance();
     setupDebugMessenger();
@@ -182,7 +204,7 @@ private:
 
   void createInstance() {
     constexpr vk::ApplicationInfo appInfo{
-      .pApplicationName =   "Hello Triangle",
+      .pApplicationName =   "Fractals",
       .applicationVersion = VK_MAKE_VERSION( 1, 0, 0 ),
       .pEngineName =        "No Engine",
       .engineVersion =      VK_MAKE_VERSION( 1, 0, 0 ),
