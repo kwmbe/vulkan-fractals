@@ -66,6 +66,14 @@ private:
   vk::Format                       swapChainImageFormat = vk::Format::eUndefined;
   vk::Extent2D                     swapChainExtent;
 
+  float panOffsetX = -0.5f;
+  float panOffsetY =  0.0f;
+  float scale =       1.0f;
+
+  bool   mousePressed = false;
+  double mouseX =       0.0f;
+  double mouseY =       0.0f;
+
   GLFWwindow* window = nullptr;
 
   struct PushConstants {
@@ -115,11 +123,45 @@ private:
 
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, frameBufferResizeCallback);
+    glfwSetCursorPosCallback(window, cursorPositionCallback);
+    glfwSetMouseButtonCallback(window, mouseButtonCallback);
   }
 
   static void frameBufferResizeCallback(GLFWwindow* window, int width, int height) {
     auto app = reinterpret_cast<Fractals*>(glfwGetWindowUserPointer(window));
     app->frameBufferResized = true;
+  }
+
+  static void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
+    auto app = reinterpret_cast<Fractals*>(glfwGetWindowUserPointer(window));
+
+    if (app->mousePressed) {
+      double deltaX = xpos - app->mouseX;
+      double deltaY = ypos - app->mouseY;
+
+      float worldDeltaX = -(deltaX / WIDTH) * app->scale * 3.0f;
+      float worldDeltaY = -(deltaY / WIDTH) * app->scale * 3.0f;
+
+      app->panOffsetX += worldDeltaX;
+      app->panOffsetY += worldDeltaY;
+
+      app->mouseX = xpos;
+      app->mouseY = ypos;
+    }
+  }
+
+  static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
+    auto app = reinterpret_cast<Fractals*>(glfwGetWindowUserPointer(window));
+
+    if (button == GLFW_MOUSE_BUTTON_LEFT) {
+      if (action == GLFW_PRESS) {
+        app->mousePressed = true;
+        glfwGetCursorPos(window, &app->mouseX, &app->mouseY);
+      }
+      if (action == GLFW_RELEASE) {
+        app->mousePressed = false;
+      }
+    }
   }
 
   void initVulkan() {
@@ -465,7 +507,7 @@ private:
 
     vk::PipelineVertexInputStateCreateInfo vertexInputInfo {
       .vertexBindingDescriptionCount =   1,
-      .pVertexBindingDescriptions =       &bindingDescription,
+      .pVertexBindingDescriptions =      &bindingDescription,
       .vertexAttributeDescriptionCount = attributeDescriptions.size(),
       .pVertexAttributeDescriptions =    attributeDescriptions.data()
     };
@@ -728,9 +770,9 @@ private:
 
     // create push constants
     PushConstants pushConstants{
-      .offsetX = -0.5, // change later
-      .offsetY =  0,
-      .scale =    1
+      .offsetX = panOffsetX,
+      .offsetY = panOffsetY,
+      .scale =   scale
     };
 
     // push constants into buffer
