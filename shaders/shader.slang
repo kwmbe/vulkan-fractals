@@ -72,8 +72,8 @@ float4 fragMain(VSOutput vertIn) : SV_Target {
   float ny = (vertIn.npos.y + 1) * 0.5;
   float ar = (vertIn.pos.x / nx) / (vertIn.pos.y / ny);
   float2 pt = float2(
-     vertIn.npos.x       * 1.5 + pc.offsetX,
-    (vertIn.npos.y / ar) * 1.5 + pc.offsetY
+     vertIn.npos.x       * 1.5 * pc.scale + pc.offsetX,
+    (vertIn.npos.y / ar) * 1.5 * pc.scale + pc.offsetY
   );
   float3 color = colorCode(mandelbrotIterations(pt));
 
