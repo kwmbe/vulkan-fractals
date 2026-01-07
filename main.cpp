@@ -137,8 +137,10 @@ private:
     auto app = reinterpret_cast<Fractals*>(glfwGetWindowUserPointer(window));
 
     if (app->mousePressed) {
-      app->panOffsetX += -((xpos - app->mouseX) / WIDTH) * app->scale * 3.0f;
-      app->panOffsetY += -((ypos - app->mouseY) / WIDTH) * app->scale * 3.0f;
+      int width;
+      glfwGetWindowSize(window, &width, nullptr);
+      app->panOffsetX += -((xpos - app->mouseX) / width) * app->scale * 3.0f;
+      app->panOffsetY += -((ypos - app->mouseY) / width) * app->scale * 3.0f;
 
       app->mouseX = xpos;
       app->mouseY = ypos;
@@ -162,13 +164,16 @@ private:
   static void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
     auto app = reinterpret_cast<Fractals*>(glfwGetWindowUserPointer(window));
 
-    float  ar = WIDTH / HEIGHT;
     double x, y;
     glfwGetCursorPos(window, &x, &y);
 
+    int width, height;
+    glfwGetWindowSize(window, &width, &height);
+    float  ar = width / height;
+
     // normalize
-    x = (x / WIDTH)  * 2.0f - 1.0f;
-    y = (y / HEIGHT) * 2.0f - 1.0f;
+    x = (x / width)  * 2.0f - 1.0f;
+    y = (y / height) * 2.0f - 1.0f;
 
     // world coords
     float wx =  x       * 1.5f * app->scale;
