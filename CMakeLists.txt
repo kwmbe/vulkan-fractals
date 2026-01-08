@@ -6,6 +6,10 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/CMake")
 find_package (glfw3 REQUIRED)
 find_package (Vulkan REQUIRED)
 
+find_program(SLANGC_EXECUTABLE slangc REQUIRED)
+
+set(SHADER_SLANG_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.slang)
+
 add_executable(Fractals main.cpp)
 
 target_link_libraries(Fractals PRIVATE
