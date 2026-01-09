@@ -66,9 +66,10 @@ private:
   vk::Format                       swapChainImageFormat = vk::Format::eUndefined;
   vk::Extent2D                     swapChainExtent;
 
-  float panOffsetX = -0.5f;
-  float panOffsetY =  0.0f;
-  float scale =       1.0f;
+  float aspectRatio =  static_cast<float>(WIDTH) / static_cast<float>(HEIGHT);
+  float panOffsetX =  -0.5f;
+  float panOffsetY =   0.0f;
+  float scale =        1.0f;
 
   bool   mousePressed = false;
   double mouseX =       0.0f;
@@ -77,6 +78,7 @@ private:
   GLFWwindow* window = nullptr;
 
   struct PushConstants {
+    float aspectRatio;
     float offsetX;
     float offsetY;
     float scale;
@@ -131,6 +133,7 @@ private:
   static void frameBufferResizeCallback(GLFWwindow* window, int width, int height) {
     auto app = reinterpret_cast<Fractals*>(glfwGetWindowUserPointer(window));
     app->frameBufferResized = true;
+    app->aspectRatio = static_cast<float>(width) / static_cast<float>(height);
   }
 
   static void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
@@ -169,22 +172,21 @@ private:
 
     int width, height;
     glfwGetWindowSize(window, &width, &height);
-    float  ar = width / height;
 
     // normalize
     x = (x / width)  * 2.0f - 1.0f;
     y = (y / height) * 2.0f - 1.0f;
 
     // world coords
-    float wx =  x       * 1.5f * app->scale;
-    float wy = (y / ar) * 1.5f * app->scale;
+    float wx =  x                     * 1.5f * app->scale;
+    float wy = (y / app->aspectRatio) * 1.5f * app->scale;
 
     // zoom
     app->scale -= app->scale * yoffset * 0.1f;
 
     // after zoom
-    float nwx =  x       * 1.5f * app->scale;
-    float nwy = (y / ar) * 1.5f * app->scale;
+    float nwx =  x                     * 1.5f * app->scale;
+    float nwy = (y / app->aspectRatio) * 1.5f * app->scale;
 
     // move by diff
     app->panOffsetX += (wx - nwx);
@@ -797,9 +799,10 @@ private:
 
     // create push constants
     PushConstants pushConstants{
-      .offsetX = panOffsetX,
-      .offsetY = panOffsetY,
-      .scale =   scale
+      .aspectRatio = aspectRatio,
+      .offsetX =     panOffsetX,
+      .offsetY =     panOffsetY,
+      .scale =       scale
     };
 
     // push constants into buffer
