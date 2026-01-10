@@ -3,8 +3,15 @@ project(Fractals)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/CMake")
 
+# not sure why I need to do this or what this does, but this shuts up CMake
+# cmake --help-policy CMP0167
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 NEW)
+endif()
+
 find_package (glfw3 REQUIRED)
 find_package (Vulkan REQUIRED)
+find_package (Boost REQUIRED)
 
 find_program(SLANGC_EXECUTABLE slangc REQUIRED)
 
@@ -15,6 +22,8 @@ add_executable(Fractals main.cpp)
 target_link_libraries(Fractals PRIVATE
     glfw
     Vulkan::Vulkan
+    gmp
+    mpfr
 )
 
 target_compile_features(Fractals PRIVATE cxx_std_20)

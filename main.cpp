@@ -1,6 +1,7 @@
 #include <vulkan/vulkan_raii.hpp>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
+#include <boost/multiprecision/mpfr.hpp>
 
 #include <iostream>
 #include <stdexcept>
@@ -10,12 +11,16 @@
 #include <limits>    // Necessary for std::numeric_limits
 #include <algorithm> // Necessary for std::clamp
 #include <array>
+#include <cmath>
 
 #include <fstream>   // for loading the shaders bytecode
+
+using HighPrecision = boost::multiprecision::number<boost::multiprecision::mpfr_float_backend<200>>;
 
 constexpr uint32_t WIDTH =                800;
 constexpr uint32_t HEIGHT =               600;
 constexpr int      MAX_FRAMES_IN_FLIGHT = 2;
+constexpr uint16_t MAX_ITER =             100;
 
 const std::vector<char const*> validationLayers = {
   "VK_LAYER_KHRONOS_validation"
@@ -54,6 +59,8 @@ private:
   vk::raii::DeviceMemory               vertexBufferMemory =        nullptr;
   vk::raii::Buffer                     indexBuffer =               nullptr;
   vk::raii::DeviceMemory               indexBufferMemory =         nullptr;
+  vk::raii::Buffer                     uniformBuffer =             nullptr;
+  vk::raii::DeviceMemory               uniformBufferMemory =       nullptr;
   uint32_t                             frameIndex =                0;
   std::vector<vk::raii::CommandBuffer> commandBuffers;
   std::vector<vk::raii::Semaphore>     presentCompleteSemaphores;
@@ -66,22 +73,27 @@ private:
   vk::Format                       swapChainImageFormat = vk::Format::eUndefined;
   vk::Extent2D                     swapChainExtent;
 
-  float aspectRatio =  static_cast<float>(WIDTH) / static_cast<float>(HEIGHT);
-  float panOffsetX =  -0.5f;
-  float panOffsetY =   0.0f;
-  float scale =        1.0f;
+  _Float16 aspectRatio =  static_cast<_Float16>(WIDTH) / static_cast<_Float16>(HEIGHT);
+  double   panOffsetX =  -0.5;
+  double   panOffsetY =   0.0;
+  float    scale =        0;
 
   bool   mousePressed = false;
-  double mouseX =       0.0f;
-  double mouseY =       0.0f;
+  double mouseX =       0.0;
+  double mouseY =       0.0;
 
   GLFWwindow* window = nullptr;
 
   struct PushConstants {
-    float aspectRatio;
-    float offsetX;
-    float offsetY;
+    uint64_t uniformBufferAddress;
     float scale;
+    uint16_t maxIter;
+    _Float16 ar;
+  };
+
+  struct UniformBuffer {
+    double offsetX;
+    double offsetY;
   };
 
   struct Vertex {
@@ -113,7 +125,8 @@ private:
     vk::KHRSwapchainExtensionName,
     vk::KHRSpirv14ExtensionName,
     vk::KHRSynchronization2ExtensionName,
-    vk::KHRCreateRenderpass2ExtensionName
+    vk::KHRCreateRenderpass2ExtensionName,
+    vk::KHR16BitStorageExtensionName
   };
 
   void initWindow() {
@@ -133,7 +146,7 @@ private:
   static void frameBufferResizeCallback(GLFWwindow* window, int width, int height) {
     auto app = reinterpret_cast<Fractals*>(glfwGetWindowUserPointer(window));
     app->frameBufferResized = true;
-    app->aspectRatio = static_cast<float>(width) / static_cast<float>(height);
+    app->aspectRatio = static_cast<_Float16>(width) / static_cast<_Float16>(height);
   }
 
   static void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
@@ -142,11 +155,12 @@ private:
     if (app->mousePressed) {
       int width;
       glfwGetWindowSize(window, &width, nullptr);
-      app->panOffsetX += -((xpos - app->mouseX) / width) * app->scale * 3.0f;
-      app->panOffsetY += -((ypos - app->mouseY) / width) * app->scale * 3.0f;
+      app->panOffsetX += -((xpos - app->mouseX) / width) * pow(10.0f, app->scale) * 3.0f;
+      app->panOffsetY += -((ypos - app->mouseY) / width) * pow(10.0f, app->scale) * 3.0f;
 
       app->mouseX = xpos;
       app->mouseY = ypos;
+      app->updateUniformBuffer();
     }
   }
 
@@ -178,19 +192,20 @@ private:
     y = (y / height) * 2.0f - 1.0f;
 
     // world coords
-    float wx =  x                     * 1.5f * app->scale;
-    float wy = (y / app->aspectRatio) * 1.5f * app->scale;
+    float wx =  x                     * 1.5f * pow(10.0f, app->scale);
+    float wy = (y / app->aspectRatio) * 1.5f * pow(10.0f, app->scale);
 
     // zoom
-    app->scale -= app->scale * yoffset * 0.1f;
+    app->scale += log10(1.0f - yoffset * 0.1f);
 
     // after zoom
-    float nwx =  x                     * 1.5f * app->scale;
-    float nwy = (y / app->aspectRatio) * 1.5f * app->scale;
+    float nwx =  x                     * 1.5f * pow(10.0f, app->scale);
+    float nwy = (y / app->aspectRatio) * 1.5f * pow(10.0f, app->scale);
 
     // move by diff
     app->panOffsetX += (wx - nwx);
     app->panOffsetY += (wy - nwy);
+    app->updateUniformBuffer();
   }
 
   void initVulkan() {
@@ -205,6 +220,7 @@ private:
     createCommandPool();
     createVertexBuffer();
     createIndexBuffer();
+    createUniformBuffer();
     createCommandBuffers();
     createSyncObjects();
   }
@@ -345,10 +361,16 @@ private:
       found = found && extensionIter != extensions.end();
     }
 
-    auto features                 = device.template getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
-    bool supportsRequiredFeatures = features.template get<vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters 
-      && features.template get<vk::PhysicalDeviceVulkan13Features>().synchronization2 
-      && features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering 
+    auto features                 = device.template getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features, vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
+    bool supportsRequiredFeatures = features.template get<vk::PhysicalDeviceFeatures2>().features.shaderFloat64
+      && features.template get<vk::PhysicalDeviceFeatures2>().features.shaderInt64
+      && features.template get<vk::PhysicalDeviceFeatures2>().features.shaderInt16
+      && features.template get<vk::PhysicalDeviceVulkan11Features>().storagePushConstant16
+      && features.template get<vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters
+      && features.template get<vk::PhysicalDeviceVulkan12Features>().bufferDeviceAddress
+      && features.template get<vk::PhysicalDeviceVulkan12Features>().shaderFloat16
+      && features.template get<vk::PhysicalDeviceVulkan13Features>().synchronization2
+      && features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering
       && features.template get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState;
 
     return isSuitable && found;
@@ -392,14 +414,25 @@ private:
 
     // Create a chain of feature structures
     // old way shown here: https://docs.vulkan.org/tutorial/latest/03_Drawing_a_triangle/01_Presentation/00_Window_surface.html
-    vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
-      {},                               // vk::PhysicalDeviceFeatures2
-      { .shaderDrawParameters = true }, // shader drawing from vulkan 11 (not mentioned in tutorial)
-      { 
-        .synchronization2 = true,       // synchronization2 from vulkan 1.3
-        .dynamicRendering = true        // dynamic rendering from vulkan 1.3
+    vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features, vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
+      { .features = vk::PhysicalDeviceFeatures{ // vk::PhysicalDeviceFeatures2
+        .shaderFloat64 = true,
+        .shaderInt64 =   true,
+        .shaderInt16 =   true
+      }},
+      {
+        .storagePushConstant16 = true,
+        .shaderDrawParameters =  true
+      },   // shader drawing from vulkan 1.1 (not mentioned in tutorial)
+      {
+        .shaderFloat16 = true,
+        .bufferDeviceAddress = true       // vulkan 1.2
       },
-      { .extendedDynamicState = true }  // dynamic state from the extension
+      {
+        .synchronization2 = true,         // synchronization2 from vulkan 1.3
+        .dynamicRendering = true          // dynamic rendering from vulkan 1.3
+      },
+      { .extendedDynamicState = true }   // dynamic state from the extension
     };
 
     vk::DeviceQueueCreateInfo deviceQueueCreateInfo {
@@ -668,7 +701,17 @@ private:
 
     vk::MemoryRequirements memRequirements = buffer.getMemoryRequirements();
 
+
+    vk::MemoryAllocateFlagsInfo allocFlagsInfo{};
+    void* pNext = nullptr;
+
+    if (usage & vk::BufferUsageFlagBits::eShaderDeviceAddress) {
+      allocFlagsInfo.flags = vk::MemoryAllocateFlagBits::eDeviceAddress;
+      pNext = &allocFlagsInfo;
+    }
+
     vk::MemoryAllocateInfo allocInfo{
+      .pNext =           pNext,
       .allocationSize =  memRequirements.size,
       .memoryTypeIndex = findMemoryType(
           memRequirements.memoryTypeBits,
@@ -738,6 +781,24 @@ private:
     copyBuffer(stagingBuffer, indexBuffer, bufferSize);
   }
 
+  void createUniformBuffer() {
+    createBuffer(sizeof(UniformBuffer), vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, uniformBuffer, uniformBufferMemory);
+    updateUniformBuffer();
+  }
+
+  void updateUniformBuffer() {
+    vk::DeviceSize bufferSize = sizeof(UniformBuffer);
+
+    UniformBuffer buffer{
+      .offsetX = panOffsetX,
+      .offsetY = panOffsetY
+    };
+
+    void* data = uniformBufferMemory.mapMemory(0, bufferSize);
+    memcpy(data, &buffer, bufferSize);
+    uniformBufferMemory.unmapMemory();
+  }
+
   void createCommandBuffers() {
     commandBuffers.clear();
 
@@ -790,19 +851,24 @@ private:
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
 
     // set viewpoint and scissor
-    commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
+    commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<_Float16>(swapChainExtent.width), static_cast<_Float16>(swapChainExtent.height), 0.0f, 1.0f));
     commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
 
     // bind vertex buffers
     commandBuffer.bindVertexBuffers(0, *vertexBuffer, {0});
     commandBuffer.bindIndexBuffer(*indexBuffer, 0, vk::IndexType::eUint16);
 
+    // Get uniformBuffer device address
+    vk::BufferDeviceAddressInfo addressInfo{
+      .buffer = *uniformBuffer
+    };
+
     // create push constants
     PushConstants pushConstants{
-      .aspectRatio = aspectRatio,
-      .offsetX =     panOffsetX,
-      .offsetY =     panOffsetY,
-      .scale =       scale
+      .uniformBufferAddress = device.getBufferAddress(addressInfo),
+      .scale =                scale,
+      .maxIter =              MAX_ITER,
+      .ar =                   aspectRatio
     };
 
     // push constants into buffer

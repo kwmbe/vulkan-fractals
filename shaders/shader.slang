@@ -1,5 +1,3 @@
-static const int MAX_ITER = 100;
-
 struct VSInput {
   float2 inPosition;
 }
@@ -10,18 +8,23 @@ struct VSOutput {
 };
 
 struct PushConstants {
-  float aspectRatio;
-  float offsetX;
-  float offsetY;
-  float scale;
+  uint64_t uniformBufferAddress;
+  float    scale;
+  uint16_t maxIter;
+  half     ar;
 };
+
+struct UniformData {
+  double offsetX;
+  double offsetY;
+}
 
 [[vk::push_constant]] PushConstants pc;
 
 float mandelbrotIterations(float2 c) {
   float2 z = float2(0.0, 0.0);
 
-  for (int i = 0; i < MAX_ITER; i++) {
+  for (int i = 0; i < pc.maxIter; i++) {
     // z = z^2 + c
     float zx = z.x * z.x - z.y * z.y + c.x;
     float zy = 2.0 * z.x * z.y + c.y;
@@ -37,16 +40,16 @@ float mandelbrotIterations(float2 c) {
     }
   }
 
-  return MAX_ITER;
+  return pc.maxIter;
 }
 
 float3 colorCode(float iterations) {
-  if (iterations >= MAX_ITER) {
+  if (iterations >= pc.maxIter) {
     return float3(1.0, 1.0, 1.0); // Inside the set = white
   }
 
   // Smooth coloring using continuous iteration count
-  float t = iterations / MAX_ITER;
+  float t = iterations / pc.maxIter;
 
   // Create a colorful gradient
   float3 color;
@@ -69,9 +72,10 @@ VSOutput vertMain(VSInput input) {
 
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_Target {
+  UniformData d = *(UniformData*)pc.uniformBufferAddress;
   float2 pt = float2(
-     vertIn.npos.x                   * 1.5 * pc.scale + pc.offsetX,
-    (vertIn.npos.y / pc.aspectRatio) * 1.5 * pc.scale + pc.offsetY
+     vertIn.npos.x          * 1.5 * pow(10.0, pc.scale) + float(d.offsetX),
+    (vertIn.npos.y / pc.ar) * 1.5 * pow(10.0, pc.scale) + float(d.offsetY)
   );
   float3 color = colorCode(mandelbrotIterations(pt));
 
