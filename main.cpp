@@ -16,6 +16,7 @@
 #include <fstream>   // for loading the shaders bytecode
 
 using HighPrecision = boost::multiprecision::number<boost::multiprecision::mpfr_float_backend<200>>;
+using Complex = std::complex<HighPrecision>;
 
 constexpr uint32_t WIDTH =                800;
 constexpr uint32_t HEIGHT =               600;
@@ -48,7 +49,7 @@ private:
   vk::raii::SurfaceKHR                 surface =                   nullptr;
   vk::raii::PhysicalDevice             physicalDevice =            nullptr;
   vk::raii::Device                     device =                    nullptr;
-	uint32_t                             graphicsIndex =             ~0;      // UINT32_MAX
+  uint32_t                             graphicsIndex =             ~0;      // UINT32_MAX
   vk::raii::Queue                      graphicsQueue =             nullptr;
   vk::raii::Queue                      presentQueue =              nullptr;
   vk::raii::SwapchainKHR               swapChain =                 nullptr;
@@ -59,13 +60,14 @@ private:
   vk::raii::DeviceMemory               vertexBufferMemory =        nullptr;
   vk::raii::Buffer                     indexBuffer =               nullptr;
   vk::raii::DeviceMemory               indexBufferMemory =         nullptr;
-  vk::raii::Buffer                     uniformBuffer =             nullptr;
-  vk::raii::DeviceMemory               uniformBufferMemory =       nullptr;
+  vk::raii::Buffer                     orbitBuffer =               nullptr;
+  vk::raii::DeviceMemory               orbitBufferMemory =         nullptr;
   uint32_t                             frameIndex =                0;
   std::vector<vk::raii::CommandBuffer> commandBuffers;
   std::vector<vk::raii::Semaphore>     presentCompleteSemaphores;
   std::vector<vk::raii::Semaphore>     renderFinishedSemaphores;
   std::vector<vk::raii::Fence>         inFlightFences;
+  std::vector<Complex>                 referenceOrbit;
 
   bool                             frameBufferResized =   false;
   std::vector<vk::Image>           swapChainImages;
@@ -77,23 +79,19 @@ private:
   double   panOffsetX =  -0.5;
   double   panOffsetY =   0.0;
   float    scale =        0;
-
-  bool   mousePressed = false;
-  double mouseX =       0.0;
-  double mouseY =       0.0;
+  uint32_t orbitLength =  0;
+  bool     mousePressed = false;
+  double   mouseX =       0.0;
+  double   mouseY =       0.0;
 
   GLFWwindow* window = nullptr;
 
   struct PushConstants {
-    uint64_t uniformBufferAddress;
-    float scale;
+    uint64_t orbitBufferAddress;
+    uint32_t orbitLength;
+    float    scale;
     uint16_t maxIter;
     _Float16 ar;
-  };
-
-  struct UniformBuffer {
-    double offsetX;
-    double offsetY;
   };
 
   struct Vertex {
@@ -147,6 +145,7 @@ private:
     auto app = reinterpret_cast<Fractals*>(glfwGetWindowUserPointer(window));
     app->frameBufferResized = true;
     app->aspectRatio = static_cast<_Float16>(width) / static_cast<_Float16>(height);
+    app->updateOrbitBuffer();
   }
 
   static void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
@@ -160,7 +159,7 @@ private:
 
       app->mouseX = xpos;
       app->mouseY = ypos;
-      app->updateUniformBuffer();
+      app->updateOrbitBuffer();
     }
   }
 
@@ -205,7 +204,20 @@ private:
     // move by diff
     app->panOffsetX += (wx - nwx);
     app->panOffsetY += (wy - nwy);
-    app->updateUniformBuffer();
+    app->updateOrbitBuffer();
+  }
+
+  void calculateReferenceOrbit() {
+    Complex x0(panOffsetX, panOffsetY);
+    Complex x = x0;
+
+    referenceOrbit.clear();
+    referenceOrbit.push_back(x);
+
+    for (int i = 0; i < MAX_ITER && norm(x) < 256.0; ++i) {
+      x = x * x + x0;
+      referenceOrbit.push_back(x);
+    }
   }
 
   void initVulkan() {
@@ -220,7 +232,7 @@ private:
     createCommandPool();
     createVertexBuffer();
     createIndexBuffer();
-    createUniformBuffer();
+    createOrbitBuffer();
     createCommandBuffers();
     createSyncObjects();
   }
@@ -781,22 +793,30 @@ private:
     copyBuffer(stagingBuffer, indexBuffer, bufferSize);
   }
 
-  void createUniformBuffer() {
-    createBuffer(sizeof(UniformBuffer), vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, uniformBuffer, uniformBufferMemory);
-    updateUniformBuffer();
+  void createOrbitBuffer() {
+    calculateReferenceOrbit();
+    vk::DeviceSize bufferSize = (referenceOrbit.size() + 1) * sizeof(double) * 2;
+    createBuffer(bufferSize, vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, orbitBuffer, orbitBufferMemory);
+    updateOrbitBuffer();
   }
 
-  void updateUniformBuffer() {
-    vk::DeviceSize bufferSize = sizeof(UniformBuffer);
+  void updateOrbitBuffer() {
+    calculateReferenceOrbit();
 
-    UniformBuffer buffer{
-      .offsetX = panOffsetX,
-      .offsetY = panOffsetY
-    };
+    vk::DeviceSize      bufferSize = (referenceOrbit.size() + 1) * sizeof(double) * 2;
+    std::vector<double> orbitData;
 
-    void* data = uniformBufferMemory.mapMemory(0, bufferSize);
-    memcpy(data, &buffer, bufferSize);
-    uniformBufferMemory.unmapMemory();
+    orbitData.push_back(panOffsetX);
+    orbitData.push_back(panOffsetY);
+
+    for (const auto& point : referenceOrbit) {
+      orbitData.push_back(static_cast<double>(point.real()));
+      orbitData.push_back(static_cast<double>(point.imag()));
+    }
+
+    void* data = orbitBufferMemory.mapMemory(0, bufferSize);
+    memcpy(data, orbitData.data(), bufferSize);
+    orbitBufferMemory.unmapMemory();
   }
 
   void createCommandBuffers() {
@@ -858,14 +878,15 @@ private:
     commandBuffer.bindVertexBuffers(0, *vertexBuffer, {0});
     commandBuffer.bindIndexBuffer(*indexBuffer, 0, vk::IndexType::eUint16);
 
-    // Get uniformBuffer device address
+    // Get orbitBuffer device address
     vk::BufferDeviceAddressInfo addressInfo{
-      .buffer = *uniformBuffer
+      .buffer = *orbitBuffer
     };
 
     // create push constants
     PushConstants pushConstants{
-      .uniformBufferAddress = device.getBufferAddress(addressInfo),
+      .orbitBufferAddress =   device.getBufferAddress(addressInfo),
+      .orbitLength =          static_cast<uint32_t>(referenceOrbit.size()),
       .scale =                scale,
       .maxIter =              MAX_ITER,
       .ar =                   aspectRatio

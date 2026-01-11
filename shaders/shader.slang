@@ -8,39 +8,54 @@ struct VSOutput {
 };
 
 struct PushConstants {
-  uint64_t uniformBufferAddress;
+  uint64_t orbitBufferAddress;
+  uint32_t orbitLength;
   float    scale;
   uint16_t maxIter;
   half     ar;
 };
 
-struct UniformData {
-  double offsetX;
-  double offsetY;
-}
-
 [[vk::push_constant]] PushConstants pc;
 
-float mandelbrotIterations(float2 c) {
-  float2 z = float2(0.0, 0.0);
+float2 getReferenceCenter() {
+  double* orbit = (double*)pc.orbitBufferAddress;
+  return float2(float(orbit[0]), float(orbit[1]));
+}
 
-  for (int i = 0; i < pc.maxIter; i++) {
-    // z = z^2 + c
-    float zx = z.x * z.x - z.y * z.y + c.x;
-    float zy = 2.0 * z.x * z.y + c.y;
-    z = float2(zx, zy);
+float2 getOrbitPoint(uint i) {
+  double* orbit = (double*)pc.orbitBufferAddress;
+  return float2(float(orbit[(i + 1) * 2]), float(orbit[(i + 1) * 2 + 1]));
+}
 
-    // Check if escaped (magnitude > 2)
-    float mag2 = z.x * z.x + z.y * z.y;
-    if (mag2 > 4.0) {
-      // Smooth iteration count for continuous coloring
+float mandelbrotIterations(float2 delta0) {
+  float2 delta = delta0;
+
+  for (uint i = 0; i < pc.orbitLength - 1 && i < pc.maxIter; ++i) {
+    float2 X = getOrbitPoint(i);
+
+    // complex multiplication: delta *= (2*X + delta)
+    float2 temp = float2(2.0 * X.x, 2.0 * X.y) + delta;
+    float2 newDelta = float2(
+      delta.x * temp.x - delta.y * temp.y,
+      delta.x * temp.y + delta.y * temp.x
+    );
+
+    // add delta0
+    delta = newDelta + delta0;
+    
+    // check escape: |X_{n+1} + delta_{n+1}|^2 > 256
+    float2 X_next = getOrbitPoint(i + 1);
+    float2 Y = X_next + delta;
+    float mag2 = Y.x * Y.x + Y.y * Y.y;
+    
+    if (mag2 > 256.0) {
       float log_zn = log(mag2) / 2.0;
-      float nu = log(log_zn / log(2.0)) / log(2.0);
-      return i + 1.0 - nu;
+      float nu = log(log_zn / log(16.0)) / log(2.0);
+      return float(i + 1) + 1.0 - nu;
     }
   }
-
-  return pc.maxIter;
+  
+  return float(pc.maxIter);
 }
 
 float3 colorCode(float iterations) {
@@ -72,10 +87,10 @@ VSOutput vertMain(VSInput input) {
 
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_Target {
-  UniformData d = *(UniformData*)pc.uniformBufferAddress;
+  float2 refc = getReferenceCenter();
   float2 pt = float2(
-     vertIn.npos.x          * 1.5 * pow(10.0, pc.scale) + float(d.offsetX),
-    (vertIn.npos.y / pc.ar) * 1.5 * pow(10.0, pc.scale) + float(d.offsetY)
+     vertIn.npos.x          * 1.5 * pow(10.0, pc.scale) + refc.x,
+    (vertIn.npos.y / pc.ar) * 1.5 * pow(10.0, pc.scale) + refc.y,
   );
   float3 color = colorCode(mandelbrotIterations(pt));
 
