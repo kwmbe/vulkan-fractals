@@ -1,5 +1,6 @@
 # vulkan-fractals
-Clone of my [vulkan-test](https://github.com/kwmbe/vulkan-test) repo for trying to visualise fractals with vulkan.
+Clone of my [vulkan-test](https://github.com/kwmbe/vulkan-test) repo for trying to visualise fractals with vulkan.  
+Currently trying to visualise the mandelbrot fractal, allowing near infinite zoom making use of [perturbation theory](https://en.wikipedia.org/wiki/Perturbation_theory).
 
 ## Running the application
 First build the application with:
