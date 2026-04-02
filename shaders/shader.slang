@@ -17,50 +17,72 @@ struct PushConstants {
 
 [[vk::push_constant]] PushConstants pc;
 
-float2 getReferenceCenter() {
-  double* orbit = (double*)pc.orbitBufferAddress;
-  return float2(float(orbit[0]), float(orbit[1]));
+double2 getOrbitPoint(double* orbit, uint i) {
+  return double2(orbit[(i + 1) * 2], orbit[(i + 1) * 2 + 1]);
 }
 
-float2 getOrbitPoint(uint i) {
+float mandelbrotIterations(float2 delta0_f) {
   double* orbit = (double*)pc.orbitBufferAddress;
-  return float2(float(orbit[(i + 1) * 2]), float(orbit[(i + 1) * 2 + 1]));
-}
 
-float mandelbrotIterations(float2 delta0) {
-  float2 delta = delta0;
+  double2 dc = double2(double(delta0_f.x), double(delta0_f.y));
+  double2 dz = double2(0.0, 0.0);
+  bool rebased = false;
 
-  for (uint i = 0; i < pc.orbitLength - 1 && i < pc.maxIter; ++i) {
-    float2 X = getOrbitPoint(i);
+  for (uint i = 0; i < pc.orbitLength - 1 && i < uint(pc.maxIter); ++i) {
+    if (!rebased) {
+      double2 Zn  = getOrbitPoint(orbit, i);
+      double2 Zn1 = getOrbitPoint(orbit, i + 1);
 
-    // complex multiplication: delta *= (2*X + delta)
-    float2 temp = float2(2.0 * X.x, 2.0 * X.y) + delta;
-    float2 newDelta = float2(
-      delta.x * temp.x - delta.y * temp.y,
-      delta.x * temp.y + delta.y * temp.x
-    );
+      double2 temp = double2(2.0 * Zn.x + dz.x, 2.0 * Zn.y + dz.y);
+      dz = double2(
+        dz.x * temp.x - dz.y * temp.y + dc.x,
+        dz.x * temp.y + dz.y * temp.x + dc.y
+      );
 
-    // add delta0
-    delta = newDelta + delta0;
-    
-    // check escape: |X_{n+1} + delta_{n+1}|^2 > 256
-    float2 X_next = getOrbitPoint(i + 1);
-    float2 Y = X_next + delta;
-    float mag2 = Y.x * Y.x + Y.y * Y.y;
-    
-    if (mag2 > 256.0) {
-      float log_zn = log(mag2) / 2.0;
-      float nu = log(log_zn / log(16.0)) / log(2.0);
-      return float(i + 1) + 1.0 - nu;
+      double2 Y = double2(Zn1.x + dz.x, Zn1.y + dz.y);
+      double mag2 = Y.x * Y.x + Y.y * Y.y;
+
+      double dzmag2 = dz.x * dz.x + dz.y * dz.y;
+      if (dzmag2 > mag2) {
+        // dz becomes the full pixel value; switch to plain iteration
+        dz = Y;
+        rebased = true;
+      }
+
+      if (mag2 > 65536.0) {
+        float log_zn = log(float(mag2)) * 0.5;
+        float nu = log(log_zn / log(2.0)) / log(2.0);
+        return float(i + 1) + 1.0 - nu;
+      }
+    } else {
+      // Plain Mandelbrot: z_{n+1} = z_n² + c
+      // c = C + dc, but C is baked into dz already after rebase
+      // We need the full c: read C from orbit buffer prefix
+      double Cr = orbit[0];
+      double Ci = orbit[1];
+      double2 c_full = double2(Cr + dc.x, Ci + dc.y);
+
+      double2 newdz = double2(
+        dz.x * dz.x - dz.y * dz.y + c_full.x,
+        2.0 * dz.x * dz.y         + c_full.y
+      );
+      dz = newdz;
+
+      double mag2 = dz.x * dz.x + dz.y * dz.y;
+      if (mag2 > 65536.0) {
+        float log_zn = log(float(mag2)) * 0.5;
+        float nu = log(log_zn / log(2.0)) / log(2.0);
+        return float(i + 1) + 1.0 - nu;
+      }
     }
   }
-  
+
   return float(pc.maxIter);
 }
 
 float3 colorCode(float iterations) {
   if (iterations >= pc.maxIter) {
-    return float3(1.0, 1.0, 1.0); // Inside the set = white
+    return float3(0.0, 0.0, 0.0); // Inside the set = black
   }
 
   // Smooth coloring using continuous iteration count
@@ -80,19 +102,16 @@ float3 colorCode(float iterations) {
 [shader("vertex")]
 VSOutput vertMain(VSInput input) {
   VSOutput output;
-  output.pos = float4(input.inPosition, 0.0, 1.0);
+  output.pos  = float4(input.inPosition, 0.0, 1.0);
   output.npos = input.inPosition;
   return output;
 }
 
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_Target {
-  float2 refc = getReferenceCenter();
-  float2 pt = float2(
-     vertIn.npos.x          * 1.5 * pow(10.0, pc.scale) + refc.x,
-    (vertIn.npos.y / pc.ar) * 1.5 * pow(10.0, pc.scale) + refc.y,
+  float2 delta0 = float2(
+     vertIn.npos.x          * 1.5 * pow(10.0, pc.scale),
+    (vertIn.npos.y / pc.ar) * 1.5 * pow(10.0, pc.scale)
   );
-  float3 color = colorCode(mandelbrotIterations(pt));
-
-  return float4(color, 1.0); // rgb + alpha
+  return float4(colorCode(mandelbrotIterations(delta0)), 1.0);
 }

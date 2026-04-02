@@ -155,7 +155,7 @@ private:
       int width;
       glfwGetWindowSize(window, &width, nullptr);
       app->panOffsetX += -((xpos - app->mouseX) / width) * pow(10.0f, app->scale) * 3.0f;
-      app->panOffsetY += -((ypos - app->mouseY) / width) * pow(10.0f, app->scale) * 3.0f;
+      app->panOffsetY += -((ypos - app->mouseY) / width) * pow(10.0f, app->scale) * 3.0f / app->aspectRatio;
 
       app->mouseX = xpos;
       app->mouseY = ypos;
@@ -209,12 +209,12 @@ private:
 
   void calculateReferenceOrbit() {
     Complex x0(panOffsetX, panOffsetY);
-    Complex x = x0;
+    Complex x(0.0, 0.0);
 
     referenceOrbit.clear();
     referenceOrbit.push_back(x);
 
-    for (int i = 0; i < MAX_ITER && norm(x) < 256.0; ++i) {
+    for (int i = 0; i < MAX_ITER; ++i) {
       x = x * x + x0;
       referenceOrbit.push_back(x);
     }
@@ -795,7 +795,7 @@ private:
 
   void createOrbitBuffer() {
     calculateReferenceOrbit();
-    vk::DeviceSize bufferSize = (referenceOrbit.size() + 1) * sizeof(double) * 2;
+    vk::DeviceSize bufferSize = (MAX_ITER + 2) * sizeof(double) * 2;
     createBuffer(bufferSize, vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, orbitBuffer, orbitBufferMemory);
     updateOrbitBuffer();
   }
@@ -803,9 +803,10 @@ private:
   void updateOrbitBuffer() {
     calculateReferenceOrbit();
 
-    vk::DeviceSize      bufferSize = (referenceOrbit.size() + 1) * sizeof(double) * 2;
+    vk::DeviceSize      bufferSize = (MAX_ITER + 2) * sizeof(double) * 2;
     std::vector<double> orbitData;
 
+    orbitData.reserve((MAX_ITER + 2) * 2);
     orbitData.push_back(panOffsetX);
     orbitData.push_back(panOffsetY);
 
