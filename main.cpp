@@ -154,8 +154,9 @@ private:
     if (app->mousePressed) {
       int width;
       glfwGetWindowSize(window, &width, nullptr);
-      app->panOffsetX += -((xpos - app->mouseX) / width) * pow(10.0f, app->scale) * 3.0f;
-      app->panOffsetY += -((ypos - app->mouseY) / width) * pow(10.0f, app->scale) * 3.0f / app->aspectRatio;
+      double sf = pow(10, static_cast<double>(app->scale));
+      app->panOffsetX += -((xpos - app->mouseX) / width) * sf * 3.0f;
+      app->panOffsetY += -((ypos - app->mouseY) / width) * sf * 3.0f / app->aspectRatio;
 
       app->mouseX = xpos;
       app->mouseY = ypos;
@@ -190,16 +191,19 @@ private:
     x = (x / width)  * 2.0f - 1.0f;
     y = (y / height) * 2.0f - 1.0f;
 
+    double sf_old = pow(10.0, static_cast<double>(app->scale));
+
     // world coords
-    float wx =  x                     * 1.5f * pow(10.0f, app->scale);
-    float wy = (y / app->aspectRatio) * 1.5f * pow(10.0f, app->scale);
+    double wx =  x                                          * 1.5f * sf_old;
+    double wy = (y / static_cast<double>(app->aspectRatio)) * 1.5f * sf_old;
 
     // zoom
     app->scale += log10(1.0f - yoffset * 0.1f);
 
     // after zoom
-    float nwx =  x                     * 1.5f * pow(10.0f, app->scale);
-    float nwy = (y / app->aspectRatio) * 1.5f * pow(10.0f, app->scale);
+    double sf_new = pow(10.0, static_cast<double>(app->scale));
+    double nwx =  x                                          * 1.5f * sf_new;
+    double nwy = (y / static_cast<double>(app->aspectRatio)) * 1.5f * sf_new;
 
     // move by diff
     app->panOffsetX += (wx - nwx);
@@ -374,8 +378,8 @@ private:
     }
 
     auto features                 = device.template getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features, vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
-    bool supportsRequiredFeatures = features.template get<vk::PhysicalDeviceFeatures2>().features.shaderFloat64
-      && features.template get<vk::PhysicalDeviceFeatures2>().features.shaderInt64
+    bool supportsRequiredFeatures = 
+         features.template get<vk::PhysicalDeviceFeatures2>().features.shaderInt64
       && features.template get<vk::PhysicalDeviceFeatures2>().features.shaderInt16
       && features.template get<vk::PhysicalDeviceVulkan11Features>().storagePushConstant16
       && features.template get<vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters
@@ -428,7 +432,6 @@ private:
     // old way shown here: https://docs.vulkan.org/tutorial/latest/03_Drawing_a_triangle/01_Presentation/00_Window_surface.html
     vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features, vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
       { .features = vk::PhysicalDeviceFeatures{ // vk::PhysicalDeviceFeatures2
-        .shaderFloat64 = true,
         .shaderInt64 =   true,
         .shaderInt16 =   true
       }},
@@ -795,7 +798,7 @@ private:
 
   void createOrbitBuffer() {
     calculateReferenceOrbit();
-    vk::DeviceSize bufferSize = (MAX_ITER + 2) * sizeof(double) * 2;
+    vk::DeviceSize bufferSize = (MAX_ITER + 2) * sizeof(float) * 2;
     createBuffer(bufferSize, vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, orbitBuffer, orbitBufferMemory);
     updateOrbitBuffer();
   }
@@ -803,16 +806,16 @@ private:
   void updateOrbitBuffer() {
     calculateReferenceOrbit();
 
-    vk::DeviceSize      bufferSize = (MAX_ITER + 2) * sizeof(double) * 2;
-    std::vector<double> orbitData;
+    vk::DeviceSize      bufferSize = (MAX_ITER + 2) * sizeof(float) * 2;
+    std::vector<float> orbitData;
 
     orbitData.reserve((MAX_ITER + 2) * 2);
-    orbitData.push_back(panOffsetX);
-    orbitData.push_back(panOffsetY);
+    orbitData.push_back(static_cast<float>(panOffsetX));
+    orbitData.push_back(static_cast<float>(panOffsetY));
 
     for (const auto& point : referenceOrbit) {
-      orbitData.push_back(static_cast<double>(point.real()));
-      orbitData.push_back(static_cast<double>(point.imag()));
+      orbitData.push_back(static_cast<float>(point.real()));
+      orbitData.push_back(static_cast<float>(point.imag()));
     }
 
     void* data = orbitBufferMemory.mapMemory(0, bufferSize);
